@@ -1,38 +1,56 @@
-require 'open-uri'
-require 'uri'
-require 'selenium-webdriver'
+require "open-uri"
+require "uri"
 
+require "selenium-webdriver"
 
-if ARGV.size < 1
-   puts "usage: #{__FILE__} URL"
+def main(args)
+  if args.size < 1
+    puts "usage: #{__FILE__} URL"
+  end
+  url = args.first
+
+  options = Selenium::WebDriver::Chrome::Options.new
+  options.add_argument("--headless")
+  driver = Selenium::WebDriver.for(:chrome, options: options)
+  images = fetch_images(driver, url)
+
+  dir = Pathname.new("images")
+  save_images(images, dir)
+
+  puts "==> Saved #{images.size} images."
 end
 
-url = ARGV.first
+def fetch_images(driver, url)
+  driver.get(url)
 
-options = Selenium::WebDriver::Chrome::Options.new
-options.add_argument('--headless')
-driver = Selenium::WebDriver.for(:chrome, options: options)
-
-driver.get(url)
-
-# Repeatedly click next buttons
-(0..).each do |i|
-   but_elms = driver.find_elements(:xpath, '//button[@class and @tabindex]')
-   if but_elms.empty? || (but_elms.size == 1 && i > 0)
+  # Repeatedly click next buttons
+  (0..).each do |i|
+    but_elms = driver.find_elements(:xpath, "//button[@class and @tabindex]")
+    if but_elms.empty? || (but_elms.size == 1 && i > 0)
       break
-   else
+    else
       next_but = but_elms.last
       next_but.click
-   end
+    end
+  end
+
+  driver.find_elements(:xpath, "//div[@style]/img").map do |elm|
+    img_url = elm.attribute("src")
+    uri = URI.parse(img_url)
+    fname = File.basename(uri.path)
+    img = OpenURI.open_uri(img_url).read
+    { fname: fname, img: img }
+  end
 end
 
-# Save all attached images
-img_elms = driver.find_elements(:xpath, '//div[@style]/img').each do |elm|
-   img_url = elm.attribute('src')
-   img = open(img_url).read
-   fname = File.basename(URI.parse(img_url).path)
-   File.open(fname, 'wb').write(img)
+def save_images(images, dir)
+  dir = Pathname.new(dir)
+  dir.mkpath unless dir.directory?
+  images.each do |img|
+    File.open(dir / img[:fname], "wb").write(img[:img])
+  end
 end
 
-puts "==> Saved #{img_elms.size} images."
-
+if $0 == __FILE__
+  main(ARGV)
+end
